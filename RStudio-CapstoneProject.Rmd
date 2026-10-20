@@ -4,6 +4,7 @@ output: html_notebook
 ---
 ##### **By Faatimah Majothi**
 
+![](https://www.classicescapes.com/wp-content/uploads/2018/05/Kentucky-Derby.CQ_-e1525419167940.jpg)
 
 In the United Kingdom, sports are a big part of the entertainment industry. Football is famously one of the most popular sports thanks to championships and leagues featuring teams from many major towns and cities across the country. 
 Watching and attending games, betting on scores and keeping track of favourite teams and players are familiar activities to many, if not most British people. As a result, betting companies have many branches in most cities, towns, and even villages across the country.
@@ -41,6 +42,7 @@ library(quantmod)
 library(dplyr)
 library(purrr)
 library(tidyverse)
+library(maps)
 
 # Save current warn option to restore later
 old_warn_option <- getOption("warn")
@@ -51,12 +53,9 @@ options(warn = -1)
 # Get stock symbols for the four companies
 getSymbols(c('FLUT', 'CZR', 'ENT.L'))
 ```
-To begin with, we create a dataframe with the `gtrend` data for our key searches. 
-```{r}
-# Create DataFrame of gtrends
-uk_sports <-  gtrends(keyword=c('football', 'tennis', 'horse racing'), geo = 'GB', time = '2021-01-01 2023-12-31')
-```
-We then create a dataframe containing the closing prices of the stocks we selected.
+### The Stock Data:
+
+To begin with, we create a dataframe containing the closing prices of the stocks we selected.
 ```{r}
 # Create individual data frames for each stock
 flut_df <- data.frame(Date = as.Date(row.names(as.data.frame(FLUT))), Close1 = FLUT$FLUT.Close)
@@ -92,11 +91,22 @@ long_stocks %>%
   labs(title = 'Stock Prices of Streaming Services (2021-2023)', y = 'Stock Price')
 
 ```
-Both graphs display the relatively higher volatility of Caesars Entertainment. This was perhaps due to higher stock prices and popularity at the time. Deeper research revealed that the three companies have different areas of focus. Flutter Ent. is an online betting company, while Entain PLC is a sports-betting and gaming company. Caesars Ent. differs in that it operates as a gaming and hospitality company in the United States.
-We can infer from this that Caesars Ent. has higher volatility as well as stock prices because of its non-sports related earnings.
-Their ownership of William Hill and their provision of online betting services makes them relevant to this analysis.
+Both graphs display the relatively **higher volatility** of Caesars Entertainment stocks. This was perhaps due to higher stock prices and popularity at the time. Deeper research revealed that the three companies have different areas of focus. Flutter Ent. is an **online betting** company, while Entain PLC is a **sports-betting and gaming** company. Caesars Ent. differs in that it operates as a **gaming and hospitality** company in the United States aside from betting.
+We can infer from this that Caesars Ent. has higher volatility as well as stock prices because of its non-sports or betting related earnings.
+Their ownership of William Hill and their provision of online betting services are the reason for their inclusion as a stock in this analysis.
 
 ##### **Sources**: [StockAnalysis (Entain)]('https://stockanalysis.com/quote/lon/ENT/'), [StockInvest (Caesars)]('https://stockinvest.us/info/CZR'), [Flutter]('https://flutter.com/')
+
+### The Trend Data:
+
+##### Setup:
+```{r}
+# Create DataFrame of gtrends
+uk_sports <-  gtrends(keyword=c('football', 'tennis', 'horse racing'), geo = 'GB', time = '2021-01-01 2023-12-31')
+```
+
+To begin exploring the Google Trends data, we first import the search data for our chosen sport into the `uk_soports` DataFrame. We can then begin exploring the data available through visualisation.
+
 ```{r}
 # Remove missing vales
 trends_over_time <- uk_sports$interest_over_time %>% replace_na(list(hits = 0))
@@ -127,17 +137,11 @@ With this overview of the trends over the years before and after the Queen's dea
 trends_over_time <- uk_sports$interest_over_time  %>% replace_na(list(hits = 0)) %>%
   filter(date >= as.Date('2022-08-10') & date <= as.Date('2022-10-09'))
 
-# Visualise
-trends_over_time %>% ggplot() + geom_line(aes(date, hits, color = keyword)) +
-  scale_color_discrete(name = 'Sport', labels = c('Football','Tennis','Horse Races' )) + 
-  labs(title = 'Google Trend Data For Sports', y = 'Hits (Normalized to be between 0 and 1000
-       ', x = 'Date', subtitle = 'Sports search trends in the United Kingdom')
-```
-We can now see that both horse racing and football had a decrease in hits around the time of Queen Elizabeth II's death, though interest in tennis did not have any significant change. However, we cannot yet determine whether the Queen's death was the sole cause for the drop in interest in the two sports.
-
-
-```{r}
 # Visualise labelled trend graph
+max_points <- trends_over_time %>%
+  group_by(keyword) %>%
+  slice_max(hits, n = 1, with_ties = FALSE)
+
 min_points <- trends_over_time %>%
   group_by(keyword) %>%
   slice_min(hits, n = 1, with_ties = FALSE)
@@ -145,8 +149,20 @@ min_points <- trends_over_time %>%
 trends_over_time %>%
   ggplot() +
   geom_line(aes(date, hits, color = keyword)) +
-  geom_text(data = min_points, aes(date, hits, label = date), vjust = -1, hjust = -0.5) +
+  geom_text(data = max_points, aes(date, hits, label = date), vjust = -0.25, hjust = -0.1) +
+  geom_point(data = max_points, aes(date, hits), color = 'black', size = 2) +
+  geom_text(data = min_points, aes(date, hits, label = date), vjust = -1, hjust = 0.75) +
   geom_point(data = min_points, aes(date, hits), color = 'black', size = 2) +
   labs(title = 'Google Trend Data For Sports', y = 'Hits (Normalized to be between 0 and 1000
        ', x = 'Date', subtitle = 'Gtrend hits for sports in the UK around Queen Elizabeth II\'s death')
+```
+We can now see that both horse racing and football had a decrease in hits around the time of Queen Elizabeth II's death, though interest in tennis **did not show any significant change**. However, we **cannot yet determine** whether the Queen's death was the sole cause for the drop in interest in the two sports.
+The previous graph also displayed significant fluctuation in hits for `football` prior to the Queen's passing, which is likely due to the immense popularity of the sport combined with the lower frequency of regular events.
+
+### Combining Data
+
+We now have a basic view of the distributions of stock and trend data. With this iverview in mind, we can begin to combine and compare the `gtrends` and stock data for analysis.
+```{r}
+# Filtering stock data by date
+select_Stocks <- all_stocks %>% filter(Date >= '2021-01-01' & Date <= '2023-12-31')
 ```

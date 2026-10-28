@@ -32,6 +32,7 @@ The stocks we have selected are:
 
 - [ENT.L] Entain PLC (Owns Ladbrokes and Coral, both common in Britain)
 
+
 ### The Data:
 
 ##### Setup:
@@ -43,9 +44,12 @@ library(dplyr)
 library(purrr)
 library(tidyverse)
 library(maps)
+install.packages('corrplot')
+library(corrplot)
+library(lubridate)
 
 # Save current warn option to restore later
-old_warn_option <- getOption("warn")
+old_warn_option <- getOption('warn')
 
 # Suppress all warnings
 options(warn = -1)
@@ -53,6 +57,8 @@ options(warn = -1)
 # Get stock symbols for the four companies
 getSymbols(c('FLUT', 'CZR', 'ENT.L'))
 ```
+
+
 ### The Stock Data:
 
 To begin with, we create a dataframe containing the closing prices of the stocks we selected.
@@ -83,6 +89,7 @@ long_stocks %>%
 We can "zoom in" on this graph to take a closer look at the years 2021-2023.
 
 ```{r}
+# Visualise data for 2021-2023
 long_stocks %>%
   filter(Date >= '2021-01-01' & Date <= '2023-12-31') %>%
   ggplot() +
@@ -97,6 +104,7 @@ Their ownership of William Hill and their provision of online betting services a
 
 ##### **Sources**: [StockAnalysis (Entain)]('https://stockanalysis.com/quote/lon/ENT/'), [StockInvest (Caesars)]('https://stockinvest.us/info/CZR'), [Flutter]('https://flutter.com/')
 
+
 ### The Trend Data:
 
 ##### Setup:
@@ -105,10 +113,10 @@ Their ownership of William Hill and their provision of online betting services a
 uk_sports <-  gtrends(keyword=c('football', 'tennis', 'horse racing'), geo = 'GB', time = '2021-01-01 2023-12-31')
 ```
 
-To begin exploring the Google Trends data, we first import the search data for our chosen sport into the `uk_soports` DataFrame. We can then begin exploring the data available through visualisation.
+To begin exploring the Google Trends data, we first import the search data for our chosen sport into the `uk_sports` DataFrame. We can then begin exploring the data available through visualisation.
 
 ```{r}
-# Remove missing vales
+# Remove missing values
 trends_over_time <- uk_sports$interest_over_time %>% replace_na(list(hits = 0))
 
 # Visualise
@@ -130,23 +138,23 @@ Lastly, the search hits for `Tennis` have few significant peaks and troughs in t
 - ([Football Premier League UK]('https://en.wikipedia.org/wiki/Premier_League'))
 - ([Tennis Season UK]('https://www.countryandtownhouse.com/culture/british-tennis-season/'))
 
-With this overview of the trends over the years before and after the Queen's death in mind, we can now zoom in on the search trend data closer to the time of her death in September 2022. For ease of visibility, we will zoom in on the 9th of September and the 30 days before and after.
+Keeping this overview of the trends over the years before and after the Queen's death in mind, we can now zoom in on the search trend data closer to the time of her death in September 2022. For ease of visibility, we will zoom in on the 9th of September and the 30 days before and after.
 
 ```{r}
 # Filter dates
-trends_over_time <- uk_sports$interest_over_time  %>% replace_na(list(hits = 0)) %>%
+zoomed_trends <- uk_sports$interest_over_time  %>% replace_na(list(hits = 0)) %>%
   filter(date >= as.Date('2022-08-10') & date <= as.Date('2022-10-09'))
 
 # Visualise labelled trend graph
-max_points <- trends_over_time %>%
+max_points <- zoomed_trends %>%
   group_by(keyword) %>%
   slice_max(hits, n = 1, with_ties = FALSE)
 
-min_points <- trends_over_time %>%
+min_points <- zoomed_trends %>%
   group_by(keyword) %>%
   slice_min(hits, n = 1, with_ties = FALSE)
 
-trends_over_time %>%
+zoomed_trends %>%
   ggplot() +
   geom_line(aes(date, hits, color = keyword)) +
   geom_text(data = max_points, aes(date, hits, label = date), vjust = -0.25, hjust = -0.1) +
@@ -159,10 +167,117 @@ trends_over_time %>%
 We can now see that both horse racing and football had a decrease in hits around the time of Queen Elizabeth II's death, though interest in tennis **did not show any significant change**. However, we **cannot yet determine** whether the Queen's death was the sole cause for the drop in interest in the two sports.
 The previous graph also displayed significant fluctuation in hits for `football` prior to the Queen's passing, which is likely due to the immense popularity of the sport combined with the lower frequency of regular events.
 
+### Correlations
+
+Our next step is to investigate the **correlations** between the betting stocks and `gtrends` data. To do this, we will perform some data cleaning and merging before plotting a correlation matrix.
+```{r}
+# Clean Dataframes for merge
+select_stocks <- select_stocks %>% replace_na(list(hits = 0)) %>% rename(date = Date)
+
+head(select_stocks)
+```
+```{r}
+# Clean Dataframes for merge
+gg_trends <- trends_over_time %>% replace_na(list(hits = 0)) %>% mutate(date = as.Date(date)) %>% pivot_wider(names_from = 'keyword', 
+values_from = 'hits')
+gg_trends <- gg_trends %>% mutate(week = floor_date(date, 'week', week_start = 2)) %>% group_by(week) %>% summarize(across(where(is.numeric), mean)) %>% rename(date = week)
+
+head(gg_trends)
+```
+```{r}
+# Join DataFrames
+stocks_hits <- inner_join(gg_trends, select_stocks, by = 'date')
+
+head(stocks_hits)
+```
+```{r}
+# Display correlations
+cor_matrix <- cor(select(stocks_hits, FLUT.Close, CZR.Close, ENT.L.Close, football, tennis, `horse racing`), use = 'complete.obs')
+
+corrplot(cor_matrix, method = 'color')
+```
+When making observations based on the correlation matrix, we will keep in mind two things: the strength and direction of correlations **between the three stocks**, and the strength and direction of the correlations **between each stock and sport**. We will ignore the dark **diagonal values**, as they do not provide us with information.
+
+Stocks:
+
+- None of the stocks have negative correlations (stocks do not tend to move in opposite directions).
+- `ENT.L` has a **weak positive correlation** of around 0.2 with `FLUT`. It has a stronger positive correlation with `CZR` (0.8 approx.), indicating that `ENT.L` stocks tend to **move in the same direction** as `CZR` stocks.
+- `CZR` has a weaker positive correlation with `FLUT` (0.3-0.4 approx.) than with `ENT.L` (0.8 approx.). We can infer from this that `CZR` stock prices are **somewhat likely to move in the same direction** as `FLUT` stocks.
+- `FLUT` having the weakest positive correlations to other stocks may be due to the **different nature of stocks held** by Flutter Ent. in comparison to Entain PLC and Caesars Ent. stocks, as Flutter primarily focuses on online betting apps.
+
+Stocks and Trends:
+
+- `ENT.L` stock prices appear to have **little to no correlation** with `football` search hits in the UK. However, there appears to be some **weak positive correlation** (around 0.1) between the company's stocks and `tennis` and `horse racing` hits.
+- `CZR` stock prices do not appear to have significant correlation with the search hits of the three sports (at least in the UK). The graph shows a very **faint positive correlation** with `football` (below 0.1). We can therefore consider the fact that Caesars Ent., being based mainly in America, may be influenced **less by the more local sports** (UK `tennis` and `horse racing`) and more by the **internationally popular** `football` leagues.
+- Curiously, `FLUT` stock prices appear to **correlate negatively** with `horse racing` search hits in the UK, though weakly so (below 0.2). `football` search hits have a **weak positive correlation** with `FLUT` stock prices, while `tennis` search hits in the UK **do not** appear to have any correlation with the company's stocks at all. 
+
+##### **NOTE: During this project's investigation, we did not find any explanation for the inverse correlation between `FLUT` stocks and horse racing. This can be considered a limitation of our investigation.**
+
+
 ### Combining Data
 
-We now have a basic view of the distributions of stock and trend data. With this iverview in mind, we can begin to combine and compare the `gtrends` and stock data for analysis.
+We now have a basic view of the distributions and correlations of the stock and trend data. With this overview in mind, we can begin to combine and compare the `gtrends` and stock data for further analysis. We will plot both DataFrames against each other and take a closer look at the patterns between stocks and hits around the date of the Queen's death in September 2022.
 ```{r}
-# Filtering stock data by date
-select_Stocks <- all_stocks %>% filter(Date >= '2021-01-01' & Date <= '2023-12-31')
+# Filtering data by date
+select_stocks <- all_stocks %>% filter(Date >= '2021-01-01' & Date <= '2023-12-31')
+
+# Map stock names
+stock_cols <- c('FLUT.Close', 'CZR.Close', 'ENT.L.Close')
+stock_labels <- c('Flutter Ent.', 'Caesars Ent.', 'Entain PLC')
+
+for (i in seq_along(stock_cols)) {
+  stock_col <- stock_cols[i]
+  stock_label <- stock_labels[i]
+  
+  # Plot
+  p <- ggplot() +
+    geom_line(data = select_stocks, aes_string(x = 'Date', y = stock_col), color = 'black', linewidth = 0.5) +
+    geom_line(data = trends_over_time, aes(x = date, y = hits * 10, color = keyword)) +
+    scale_y_continuous(
+      name = paste0(stock_label, ' Stock Price'),
+      sec.axis = sec_axis(~./10, name = 'Google Trends Hits')
+    ) +
+    labs(
+      title = paste0(stock_label, ' Stock Price vs Sports Google Trends'),
+      color = 'Sport'
+    ) +
+    geom_vline(xintercept = as.Date('2022-09-08'), linetype = 'dashed', color = 'red') +
+  annotate('text', x = as.Date('2022-09-08'), y = Inf, label = 'Queen Elizabeth II\'s Death', vjust = 2, hjust = -0.05, color = 'red')
+  print(p)
+}
 ```
+```{r}
+# Filter and plot zoomed stocks
+filter_stocks <- all_stocks %>% filter(Date >= '2022-08-10' & Date <= '2022-10-09')
+filter_trends <- trends_over_time %>% filter(date >= '2022-08-10' & date <= '2022-10-09')
+
+for (i in seq_along(stock_cols)) {
+  stock_col <- stock_cols[i]
+  stock_label <- stock_labels[i]
+  
+  # Plot
+  p <- ggplot() +
+    geom_line(data = filter_stocks, aes_string(x = 'Date', y = stock_col), color = 'black', linewidth = 0.5) +
+    geom_line(data = filter_trends, aes(x = date, y = hits * 10, color = keyword)) +
+    scale_y_continuous(
+      name = paste0(stock_label, ' Stock Price'),
+      sec.axis = sec_axis(~./10, name = 'Google Trends Hits')
+    ) +
+    labs(
+      title = paste0(stock_label, ' Stock Price vs Sports Google Trends'),
+      color = 'Sport'
+    ) +
+    geom_vline(xintercept = as.Date('2022-09-08'), linetype = 'dashed', color = 'red') +
+  annotate('text', x = as.Date('2022-09-08'), y = Inf, label = 'Queen Elizabeth II\'s Death', vjust = 2, hjust = -0.05, color = 'red')
+  print(p)
+}
+
+```
+With our betting company stocks plotted against the `gtrends` data, we can make the following observations:
+
+- **Flutter Ent:** There is **no apparent correlation** between the general trend data for `tennis` and `horse racing` and Flutter Ent's closing stock prices over the time period. However, there seems to be a drop in stock prices after the Queen's death which **correlates** with the drop in `football` search hits in the UK after that 8th.
+- **Caesars Ent:** There is **no apparent correlation** between the general trend data for `tennis` and `horse racing` and Caesars Ent's closing stock prices over the time period. Similarly to the previous graph, there does appear to be some **minor correlation** 
+between the drop in `football` search hits in the UK and the small drop in Caesars Ent stocks after the Queen's death.
+- **Entain PLC:** Unlike the others, Entain PLC's stocks appear to have experienced an increase in stock prices around the time of the Queen's death. There appears to be a general **correlation** between `football` hits and stock prices. Additionally, there seems to be a **weak inverse correlation** between interest in `football` and Entain PLC stocks after the Queen's passing on September 8th. There **does not appear to be any correlation** between hits for the other two sports and the company's stock prices around that time.
+
+

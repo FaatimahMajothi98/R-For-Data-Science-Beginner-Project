@@ -172,7 +172,7 @@ The previous graph also displayed significant fluctuation in hits for `football`
 Our next step is to investigate the **correlations** between the betting stocks and `gtrends` data. To do this, we will perform some data cleaning and merging before plotting a correlation matrix.
 ```{r}
 # Clean Dataframes for merge
-select_stocks <- select_stocks %>% replace_na(list(hits = 0)) %>% rename(date = Date)
+select_stocks <- all_stocks %>% replace_na(list(hits = 0)) %>% rename(date = Date)
 
 head(select_stocks)
 ```
@@ -193,10 +193,11 @@ head(stocks_hits)
 ```{r}
 # Display correlations
 cor_matrix <- cor(select(stocks_hits, FLUT.Close, CZR.Close, ENT.L.Close, football, tennis, `horse racing`), use = 'complete.obs')
+diag(cor_matrix) <- NA
 
 corrplot(cor_matrix, method = 'color')
 ```
-When making observations based on the correlation matrix, we will keep in mind two things: the strength and direction of correlations **between the three stocks**, and the strength and direction of the correlations **between each stock and sport**. We will ignore the dark **diagonal values**, as they do not provide us with information.
+When making observations based on the correlation matrix, we will keep in mind two things: the strength and direction of correlations **between the three stocks**, and the strength and direction of the correlations **between each stock and sport**.
 
 Stocks:
 
@@ -281,3 +282,79 @@ between the drop in `football` search hits in the UK and the small drop in Caesa
 - **Entain PLC:** Unlike the others, Entain PLC's stocks appear to have experienced an increase in stock prices around the time of the Queen's death. There appears to be a general **correlation** between `football` hits and stock prices. Additionally, there seems to be a **weak inverse correlation** between interest in `football` and Entain PLC stocks after the Queen's passing on September 8th. There **does not appear to be any correlation** between hits for the other two sports and the company's stock prices around that time.
 
 
+### Statistical Models
+
+Lastly, we will attempt to build a linear regression model to **investigate the effect** the sports trends had on the betting stock from the stock-trend pairs with the **highest correlation**. We can identify the pairs with the strongest correlations by looking at the correlation matrix we created earlier. 
+
+```{r}
+# Filter for stock-hits pairs
+cor_matrix[1:3, 1:3] <- NA
+cor_matrix[4:6, 4:6] <- NA
+
+# View most strongly correlating pairs
+max_pair = which(cor_matrix == max(cor_matrix, na.rm = TRUE), arr.ind = TRUE)
+min_pair = which(cor_matrix == min(cor_matrix, na.rm = TRUE), arr.ind = TRUE)
+
+print('Maximum Negative Correlation:')
+print(min_pair)
+
+print('Maximum Positive Correlation:')
+print(max_pair)
+
+print(cor_matrix)
+```
+The code above identifies `FLUT` as the stock with the strongest correlations, both negative and positive. `FLUT` had the strongest negative correlation of(-0.24), with the `horse racing`search hits in the UK.  It also had the strongest positive correlation of (0.51), with the `tennis` search hits.
+
+We will now begin the process of building a linear regression model. The main steps of the process include:
+
+- Filtering for a DataFrame with only `FLUT` stock data matching with the trends data by date.
+- Fitting a linear regression models with the trend hits as the predictor for `FLUT` stocks, individual trends and combined.
+- Plotting linear regressions with a LOESS smoother to fit the general trend of the data.
+
+```{r}
+# Prepare data
+flut_hits <- stocks_hits %>% select(-CZR.Close, -ENT.L.Close)
+head(flut_hits)
+
+# Fit models
+model <- lm(FLUT.Close ~ tennis + `horse racing`, data = flut_hits)
+
+# Display summaries
+print('Tennis and horse racing hits / FLUT Stocks')
+summary(model)
+```
+Our linear regression model `model` is fitted with both `tennis` hits and `horse riding` hits as predictors. 
+The coefficient for `tennis` is 2.24, indicating that for each additional `tennis` search hit, the `FLUT` stock price increases by about 2.24 units, holding other variables constant. In comparison, the coefficient for `horse racing` is -6.83, indicating that for each additional `horse racing` hit, the `FLUT` stock price decreases by about -6.83 units. However, the p-values are 0.19 for `tennis` and 0.44 for `horse racing`, both of which are above the standard significance threshold of 0.05. This suggests that neither relationship is statistically significant. 
+The model’s R-squared value is 0.35, meaning about 35% of the variation in `FLUT` stock price is explained by the predictors, which is a statistically moderate association. However, due to the limited significance and few predictors, we must interpret these results with caution.
+
+Finally, we will plot our linear regression model with a LOESS smoother, in order to better fit the general trend of the data.
+
+```{r}
+# Tennis
+flut_hits %>% 
+  ggplot(aes(x = tennis, y = FLUT.Close)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  geom_smooth(se = FALSE, color = 'red', method = 'loess') +
+  labs(title = 'FLUT Stock vs Tennis Search Hits', x = 'Tennis Search Hits', y = 'FLUT Stock Price')
+
+# Horse Racing
+flut_hits %>% 
+  ggplot(aes(x = `horse racing`, y = FLUT.Close)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  geom_smooth(se = FALSE, color = 'red', method = 'loess') +
+  labs(title = 'FLUT Stock vs Horse Racing Search Hits', x = 'Horse Racing Search Hits', y = 'FLUT Stock Price')
+```
+
+As expected, the relationships do not look linear. It is possible that a multiple linear regression model or a model that considers more factors would be more effective at predicting stock prices, but for now, the plot supports the model summary statistics that indicate very little statistical significance.
+
+### Conclusion
+
+In this project, we used the `gtrends` and `quantmod` libraries to perform a simple analysis of the correlation between interest in popular UK sports and betting stock prices, around the date of Queen Elizabeth II's death. Our analysis identified some **weak positive correlation** between the stocks and interest in the sports for most of the companies, particularly **Flutter Ent.** and **Entain PLC**. There was far less correlation between search hits in the UK and **Caesars Ent.** stocks, presumably because of the companies holdings in hospitality and non-sports related business in America. 
+
+Our analysis found that the Queen's death correlated with a slight drop in search hits for the three selected sports, most notably `football`. We observed some correlation with change in stock prices for the three companies around the date of her death, some of which coincided with fluctuation in search hits for `football` in particular. **(As a reminder, correlation does not always equal causation.)**
+
+Lastly, using our linear regression model, we focused on **Flutter Ent.** and identified that the apparent correlation between the stock prices and football and horse racing hits were not statistically significant, being below the threshold of significance. We also observed that the relationships between the sports hits and stock prices for **Flutter Ent.** were non-linear, a point that may be worth investigating in a future analysis.
+
+Thank you for taking the time to read this notebook!
